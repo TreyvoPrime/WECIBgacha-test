@@ -1,5 +1,5 @@
 const TEAM_LIMIT = 5;
-const BOSS_REWARD = 2500;
+const BOSS_REWARD = 5000;
 const BOSS_STATE_KEY = 'wecib-gacha-boss-state';
 const BOSS_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 const TURN_DELAY_MS = 420;
@@ -221,6 +221,10 @@ function formatPP(value) {
   return Number(value).toFixed(2);
 }
 
+function formatReward(value) {
+  return Math.round(Number(value) || 0);
+}
+
 function getInventoryCards() {
   return getInventory().map(enrichCard);
 }
@@ -236,6 +240,10 @@ function getRarityRank(card) {
 
 function getPowerScore(card) {
   return Number(card.attack || 0) + Number(card.defense || 0);
+}
+
+function getDeckBattleReward(team) {
+  return Math.max(0, Math.round(team.reduce((sum, card) => sum + getRegularMaxHp(card), 0) / 10));
 }
 
 function getRegularMaxHp(card) {
@@ -400,7 +408,10 @@ function renderMode() {
     button.disabled = isBattling;
   });
 
-  rewardLabelEl.textContent = battleMode === 'boss' ? `${BOSS_REWARD} PP` : 'Win';
+  const selectedTeam = getSelectedTeam();
+  rewardLabelEl.textContent = battleMode === 'boss'
+    ? `${BOSS_REWARD} PP`
+    : `${formatReward(getDeckBattleReward(selectedTeam))} PP`;
   startBattleBtn.textContent = isBattling
     ? 'Battling'
     : (battleMode === 'boss' ? 'Start Boss Battle' : 'Start 5v5 Battle');
@@ -719,8 +730,11 @@ async function runBattle(playerCards, enemyCards) {
   }
 
   activeBattle.playerWon = activeBattle.enemyTeam.every((card) => card.hp <= 0);
+  activeBattle.reward = activeBattle.playerWon
+    ? (battleMode === 'boss' ? BOSS_REWARD : getDeckBattleReward(activeBattle.playerTeam))
+    : 0;
   const resultText = activeBattle.playerWon
-    ? (battleMode === 'boss' ? `Boss cleared. +${BOSS_REWARD} PP` : '5v5 battle won.')
+    ? (battleMode === 'boss' ? `Boss cleared. +${BOSS_REWARD} PP` : `5v5 battle won. +${formatReward(activeBattle.reward)} PP`)
     : (battleMode === 'boss' ? 'Boss battle lost.' : 'AI deck won.');
 
   activeBattle.resultText = resultText;
@@ -731,6 +745,7 @@ async function runBattle(playerCards, enemyCards) {
     resultText,
     playerTeam: activeBattle.playerTeam,
     enemyTeam: activeBattle.enemyTeam,
+    reward: activeBattle.reward,
     playerIndex: activeBattle.playerIndex,
     enemyIndex: activeBattle.enemyIndex,
     logs: [...activeBattle.logs],
@@ -761,6 +776,8 @@ async function startBattle() {
   if (battleMode === 'boss' && lastBattle.playerWon) {
     markBossDefeated();
     grantPP(BOSS_REWARD);
+  } else if (battleMode === 'deck' && lastBattle.playerWon) {
+    grantPP(lastBattle.reward);
   }
 
   activeBattle = null;

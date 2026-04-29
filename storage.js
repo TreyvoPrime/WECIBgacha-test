@@ -3,12 +3,12 @@ const LEGACY_INVENTORY_KEY = 'inventory';
 const LEGACY_BALANCE_KEY = 'balance';
 
 const PASSIVE_PP_RATES = {
-  freshman: 1,
-  sophomore: 2,
-  junior: 4,
-  senior: 7,
-  superSenior: 12,
-  graduated: 20,
+  freshman: 1.5,
+  sophomore: 3,
+  junior: 6,
+  senior: 10.5,
+  superSenior: 18,
+  graduated: 30,
 };
 
 const SELL_PP_RATES = {
