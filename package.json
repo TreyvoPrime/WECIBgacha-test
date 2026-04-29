@@ -1,0 +1,24 @@
+{
+  "name": "wecibgacha-test",
+  "version": "1.0.0",
+  "description": "",
+  "main": "case.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TreyvoPrime/WECIBgacha-test.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/TreyvoPrime/WECIBgacha-test/issues"
+  },
+  "homepage": "https://github.com/TreyvoPrime/WECIBgacha-test#readme",
+  "devDependencies": {
+    "playwright": "^1.59.1"
+  }
+}

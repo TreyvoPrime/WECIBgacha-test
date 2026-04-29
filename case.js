@@ -34,6 +34,7 @@ const SUPER_SENIOR_FALLBACKS = [
 
 const CARD_OVERRIDES = {
   // Freshman
+  ab: { attack: 300, defense: 300, image: 'Images/ABCard.png', description: 'AB card.' },
   alexfrieders: { attack: 320, defense: 480, image: 'Images/AlexCard.png', description: 'Freaky ahh junior.' },
   annamoore: { attack: 350, defense: 350, image: 'Images/AnnaCard.png', description: 'Boy scout, knows some Japanese. Junior.' },
   beatricekovalik: { attack: 230, defense: 280, image: 'Images/BeatriceCard.png', description: 'Ballet ahh junior.' },
@@ -84,6 +85,7 @@ const CARD_OVERRIDES = {
   mhstheatre: { attack: 650, defense: 690, image: 'Images/MHSTheaterCard.png', description: 'Home to many lost children, led by their cruel dictator, Mrs. Kaulfuss.' },
   poppimachine: { attack: 490, defense: 700, image: 'Images/PoppiVendingRT1.png', description: 'Everyone loves Poppi, right? Guys?' },
   poppivendingrt1: { attack: 490, defense: 700, image: 'Images/PoppiVendingRT1.png', description: 'Everyone loves Poppi, right? Guys?' },
+  jameysideways: { attack: 680, defense: 640, image: 'Images/SidewaysJameyCard.png', description: 'Jamey, but sideways.' },
   sidewaysjamey: { attack: 680, defense: 640, image: 'Images/SidewaysJameyCard.png', description: 'Jamey, but sideways.' },
   sustenance: { attack: 760, defense: 460, image: 'Images/SustenanceCard.png', description: 'Food is important. I think, at least. I\'m like 80% sure.' },
   tristanowen: { attack: 670, defense: 730, image: 'Images/TristanOwenCard.png', description: 'Built like a microphone. Junior.' },
@@ -429,10 +431,15 @@ function renderRouletteItemMarkup(card) {
 
 function renderWonItemMarkup(card) {
   const safeCard = enrichCard(card);
+  const cardImg = safeCard.image || '';
+  const initials = initialsFromName(safeCard.name);
 
   return `
     <div class="won-rarity">${safeCard.rarityLabel}</div>
-    <div class="item-icon item-icon-large" aria-hidden="true">${initialsFromName(safeCard.name)}</div>
+    <div class="won-card-art-wrap">
+      <img class="won-card-img" src="${cardImg}" alt="${safeCard.name}" onerror="this.style.display='none'; this.parentElement.querySelector('.won-card-fallback').style.display='grid';">
+      <div class="won-card-fallback" style="display:none;">${initials}</div>
+    </div>
     <div class="item-name won-item-name">${safeCard.name}</div>
     <div class="won-item-meta">${safeCard.caseName}</div>
     <div class="won-item-stats">ATK ${safeCard.attack} | DEF ${safeCard.defense}</div>
