@@ -408,10 +408,9 @@ function renderMode() {
     button.disabled = isBattling;
   });
 
-  const selectedTeam = getSelectedTeam();
   rewardLabelEl.textContent = battleMode === 'boss'
     ? `${BOSS_REWARD} PP`
-    : `${formatReward(getDeckBattleReward(selectedTeam))} PP`;
+    : `${formatReward(getDeckBattleReward(currentAiDeck))} PP`;
   startBattleBtn.textContent = isBattling
     ? 'Battling'
     : (battleMode === 'boss' ? 'Start Boss Battle' : 'Start 5v5 Battle');
@@ -731,7 +730,7 @@ async function runBattle(playerCards, enemyCards) {
 
   activeBattle.playerWon = activeBattle.enemyTeam.every((card) => card.hp <= 0);
   activeBattle.reward = activeBattle.playerWon
-    ? (battleMode === 'boss' ? BOSS_REWARD : getDeckBattleReward(activeBattle.playerTeam))
+    ? (battleMode === 'boss' ? BOSS_REWARD : getDeckBattleReward(activeBattle.enemyTeam))
     : 0;
   const resultText = activeBattle.playerWon
     ? (battleMode === 'boss' ? `Boss cleared. +${BOSS_REWARD} PP` : `5v5 battle won. +${formatReward(activeBattle.reward)} PP`)
