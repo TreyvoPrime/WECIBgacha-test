@@ -1,5 +1,9 @@
 const TEAM_LIMIT = 5;
 const BOSS_REWARD = 2500;
+const BOSS_STATE_KEY = 'wecib-gacha-boss-state';
+const BOSS_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+const TURN_DELAY_MS = 420;
+const ENTRY_DELAY_MS = 360;
 
 const RARITIES = {
   freshman: { label: 'Freshman', rank: 0 },
@@ -173,6 +177,8 @@ let battleMode = 'boss';
 let currentBoss = createBossCard();
 let currentAiDeck = createAiDeck();
 let lastBattle = null;
+let activeBattle = null;
+let isBattling = false;
 
 function normalizeCardKey(name) {
   return String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -232,13 +238,71 @@ function getPowerScore(card) {
   return Number(card.attack || 0) + Number(card.defense || 0);
 }
 
+function getRegularMaxHp(card) {
+  return Math.max(1, Math.round(Number(card.attack || 0) + Number(card.defense || 0) + 100));
+}
+
+function getTodayKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getDailyBossBase(dayKey = getTodayKey()) {
+  const [year, month, day] = dayKey.split('-').map(Number);
+  const dayNumber = Math.floor(Date.UTC(year, month - 1, day) / 86400000);
+  const index = dayNumber % BOSS_POOL.length;
+  return BOSS_POOL[index];
+}
+
+function readBossState() {
+  try {
+    return JSON.parse(localStorage.getItem(BOSS_STATE_KEY) || '{}') || {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function saveBossState(nextState) {
+  localStorage.setItem(BOSS_STATE_KEY, JSON.stringify(nextState));
+}
+
+function getBossCooldown(now = Date.now()) {
+  const defeatedAt = Number(readBossState().defeatedAt || 0);
+  const remainingMs = defeatedAt ? Math.max(0, BOSS_COOLDOWN_MS - (now - defeatedAt)) : 0;
+  return {
+    locked: remainingMs > 0,
+    remainingMs,
+  };
+}
+
+function formatCooldown(ms) {
+  const totalMinutes = Math.max(0, Math.ceil(ms / 60000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours <= 0) return `${minutes}m`;
+  return `${hours}h ${minutes}m`;
+}
+
+function markBossDefeated() {
+  saveBossState({
+    defeatedAt: Date.now(),
+    bossDayKey: currentBoss.dayKey,
+    bossName: currentBoss.name,
+  });
+}
+
 function createBossCard() {
-  const base = enrichCard(BOSS_POOL[Math.floor(Math.random() * BOSS_POOL.length)]);
+  const dayKey = getTodayKey();
+  const base = enrichCard(getDailyBossBase(dayKey));
+  const regularHp = getRegularMaxHp(base);
   return {
     ...base,
-    id: `boss-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    id: `boss-${dayKey}-${normalizeCardKey(base.name)}`,
+    dayKey,
     isBoss: true,
-    maxHp: Math.round(base.defense * 3.25 + base.attack * 0.45),
+    maxHp: Math.round(regularHp * 2.35),
     battleAttack: Math.round(base.attack * 0.38),
     description: 'Graduate boss.',
   };
@@ -278,13 +342,14 @@ function renderTeamSlots() {
     const slot = document.createElement('button');
     slot.type = 'button';
     slot.className = `battle-team-slot${card ? ` rarity-${card.rarityKey}` : ' is-empty'}`;
+    slot.disabled = isBattling;
     slot.setAttribute('aria-label', card ? `Remove ${card.name}` : `Empty team slot ${index + 1}`);
     slot.innerHTML = card ? `
       ${renderCardImage(card, 'battle-slot-image')}
       <span>${escapeHtml(card.name)}</span>
     ` : `<span>Slot ${index + 1}</span>`;
 
-    if (card) {
+    if (card && !isBattling) {
       slot.addEventListener('click', () => {
         selectedCardIds = selectedCardIds.filter((id) => id !== card.id);
         lastBattle = null;
@@ -312,7 +377,7 @@ function renderAvailableCards() {
 
   cards.forEach((card) => {
     const isSelected = selected.has(card.id);
-    const isLocked = !isSelected && selectedCardIds.length >= TEAM_LIMIT;
+    const isLocked = isBattling || (!isSelected && selectedCardIds.length >= TEAM_LIMIT);
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `battle-card-option rarity-${card.rarityKey}${isSelected ? ' is-selected' : ''}`;
@@ -328,13 +393,23 @@ function renderAvailableCards() {
 }
 
 function renderMode() {
+  const bossCooldown = getBossCooldown();
+
   modeButtons.forEach((button) => {
     button.classList.toggle('is-active', button.dataset.mode === battleMode);
+    button.disabled = isBattling;
   });
 
   rewardLabelEl.textContent = battleMode === 'boss' ? `${BOSS_REWARD} PP` : 'Win';
-  startBattleBtn.textContent = battleMode === 'boss' ? 'Start Boss Battle' : 'Start 5v5 Battle';
+  startBattleBtn.textContent = isBattling
+    ? 'Battling'
+    : (battleMode === 'boss' ? 'Start Boss Battle' : 'Start 5v5 Battle');
   enemyBenchLabelEl.textContent = battleMode === 'boss' ? 'Boss' : 'AI Deck';
+  rerollOpponentBtn.textContent = battleMode === 'boss' ? 'Daily Boss' : 'New Opponent';
+  rerollOpponentBtn.disabled = isBattling || battleMode === 'boss';
+  startBattleBtn.disabled = isBattling || (battleMode === 'boss' && bossCooldown.locked);
+  autoTeamBtn.disabled = isBattling;
+  clearTeamBtn.disabled = isBattling;
 }
 
 function renderFighter(card, label) {
@@ -396,45 +471,67 @@ function getActiveFighter(team) {
 function renderArena() {
   const selectedTeam = getSelectedTeam().map((card) => ({
     ...card,
-    hp: card.defense,
-    maxHp: card.defense,
+    hp: getRegularMaxHp(card),
+    maxHp: getRegularMaxHp(card),
   }));
   const enemyTeam = getPreviewEnemyTeam().map((card) => ({
     ...card,
-    hp: card.maxHp || card.defense,
-    maxHp: card.maxHp || card.defense,
+    hp: card.isBoss ? card.maxHp : getRegularMaxHp(card),
+    maxHp: card.isBoss ? card.maxHp : getRegularMaxHp(card),
   }));
 
-  const playerTeam = lastBattle?.playerTeam || selectedTeam;
-  const opponentTeam = lastBattle?.enemyTeam || enemyTeam;
-  const playerActive = getActiveFighter(playerTeam);
-  const enemyActive = getActiveFighter(opponentTeam);
+  const battleState = activeBattle || lastBattle;
+  const playerTeam = battleState?.playerTeam || selectedTeam;
+  const opponentTeam = battleState?.enemyTeam || enemyTeam;
+  const playerActive = battleState && battleState.playerIndex >= 0
+    ? playerTeam[battleState.playerIndex]
+    : getActiveFighter(playerTeam);
+  const enemyActive = battleState && battleState.enemyIndex >= 0
+    ? opponentTeam[battleState.enemyIndex]
+    : getActiveFighter(opponentTeam);
 
   playerCombatantEl.innerHTML = renderFighter(playerActive, 'Your Card');
   enemyCombatantEl.innerHTML = renderFighter(enemyActive, battleMode === 'boss' ? 'Boss' : 'Opponent');
   playerBenchEl.innerHTML = playerTeam.length ? playerTeam.map(renderBenchCard).join('') : '<span class="battle-empty-text">No team selected</span>';
   enemyBenchEl.innerHTML = opponentTeam.map(renderBenchCard).join('');
 
-  if (!lastBattle) {
+  if (!battleState) {
     battleLogEl.innerHTML = '<p>Battle log will appear here.</p>';
   } else {
-    battleLogEl.innerHTML = lastBattle.logs.map((line) => `<p>${escapeHtml(line)}</p>`).join('');
+    battleLogEl.innerHTML = battleState.logs.map((line) => `<p>${escapeHtml(line)}</p>`).join('');
     battleLogEl.scrollTop = battleLogEl.scrollHeight;
   }
 }
 
 function renderStatus() {
+  if (activeBattle) {
+    battleStatusEl.textContent = activeBattle.resultText || 'Battle in progress.';
+    return;
+  }
+
+  const bossCooldown = getBossCooldown();
+  if (battleMode === 'boss' && bossCooldown.locked && lastBattle?.playerWon) {
+    battleStatusEl.textContent = `Boss cleared. +${BOSS_REWARD} PP. Next fight in ${formatCooldown(bossCooldown.remainingMs)}.`;
+    return;
+  }
+
   if (lastBattle) {
     battleStatusEl.textContent = lastBattle.resultText;
     return;
   }
 
+  if (battleMode === 'boss' && bossCooldown.locked) {
+    battleStatusEl.textContent = `Boss cleared. Next fight in ${formatCooldown(bossCooldown.remainingMs)}.`;
+    return;
+  }
+
   battleStatusEl.textContent = battleMode === 'boss'
-    ? `${currentBoss.name} is waiting.`
+    ? `${currentBoss.name} is today's boss.`
     : 'The AI deck is ready.';
 }
 
 function renderAll() {
+  refreshDailyBoss();
   const team = getSelectedTeam();
   balanceEl.textContent = formatPP(getBalance());
   teamCountEl.textContent = String(team.length);
@@ -483,6 +580,8 @@ function switchMode(nextMode) {
 }
 
 function rerollOpponent() {
+  if (isBattling) return;
+
   lastBattle = null;
   if (battleMode === 'boss') {
     currentBoss = createBossCard();
@@ -492,8 +591,21 @@ function rerollOpponent() {
   renderAll();
 }
 
+function refreshDailyBoss() {
+  if (currentBoss.dayKey !== getTodayKey()) {
+    currentBoss = createBossCard();
+    if (battleMode === 'boss') {
+      lastBattle = null;
+    }
+    return true;
+  }
+  return false;
+}
+
 function createFighter(card, side) {
-  const maxHp = Math.max(1, Math.round(card.maxHp || card.defense));
+  const maxHp = card.isBoss
+    ? Math.max(1, Math.round(card.maxHp || getRegularMaxHp(card)))
+    : getRegularMaxHp(card);
   return {
     ...card,
     side,
@@ -517,62 +629,117 @@ function calculateDamage(attacker, defender) {
   return Math.max(30, Math.round(baseAttack * variance - guard));
 }
 
-function simulateBattle(playerCards, enemyCards) {
+function delay(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function pushBattleLog(message) {
+  activeBattle.logs.push(message);
+  renderArena();
+  renderStatus();
+}
+
+async function playAttackAnimation(attackerSide) {
+  const attackerEl = attackerSide === 'player' ? playerCombatantEl : enemyCombatantEl;
+  const defenderEl = attackerSide === 'player' ? enemyCombatantEl : playerCombatantEl;
+  attackerEl.classList.add('is-attacking');
+  defenderEl.classList.add('is-hit');
+  await delay(TURN_DELAY_MS);
+  attackerEl.classList.remove('is-attacking');
+  defenderEl.classList.remove('is-hit');
+}
+
+async function playEntryAnimation(side) {
+  const element = side === 'player' ? playerCombatantEl : enemyCombatantEl;
+  element.classList.add('is-entering');
+  await delay(ENTRY_DELAY_MS);
+  element.classList.remove('is-entering');
+}
+
+function createBattleState(playerCards, enemyCards) {
   const playerTeam = playerCards.map((card) => createFighter(card, 'player'));
   const enemyTeam = enemyCards.map((card) => createFighter(card, 'enemy'));
-  const logs = [];
-  let playerIndex = nextAliveIndex(playerTeam, 0);
-  let enemyIndex = nextAliveIndex(enemyTeam, 0);
+  return {
+    playerWon: false,
+    resultText: 'Battle in progress.',
+    playerTeam,
+    enemyTeam,
+    playerIndex: nextAliveIndex(playerTeam, 0),
+    enemyIndex: nextAliveIndex(enemyTeam, 0),
+    logs: [],
+  };
+}
+
+async function runBattle(playerCards, enemyCards) {
+  activeBattle = createBattleState(playerCards, enemyCards);
+  lastBattle = null;
   let turns = 0;
 
-  logs.push(`${playerTeam[playerIndex].name} enters.`);
-  logs.push(`${enemyTeam[enemyIndex].name} enters.`);
+  pushBattleLog(`${activeBattle.playerTeam[activeBattle.playerIndex].name} enters.`);
+  await playEntryAnimation('player');
+  pushBattleLog(`${activeBattle.enemyTeam[activeBattle.enemyIndex].name} enters.`);
+  await playEntryAnimation('enemy');
 
-  while (playerIndex >= 0 && enemyIndex >= 0 && turns < 180) {
-    const player = playerTeam[playerIndex];
-    const enemy = enemyTeam[enemyIndex];
+  while (activeBattle.playerIndex >= 0 && activeBattle.enemyIndex >= 0 && turns < 180) {
+    const player = activeBattle.playerTeam[activeBattle.playerIndex];
+    const enemy = activeBattle.enemyTeam[activeBattle.enemyIndex];
     const playerDamage = calculateDamage(player, enemy);
     enemy.hp = Math.max(0, enemy.hp - playerDamage);
-    logs.push(`${player.name} hits ${enemy.name} for ${playerDamage}.`);
+    pushBattleLog(`${player.name} hits ${enemy.name} for ${playerDamage}.`);
+    await playAttackAnimation('player');
 
     if (enemy.hp <= 0) {
-      logs.push(`${enemy.name} is down.`);
-      enemyIndex = nextAliveIndex(enemyTeam, enemyIndex + 1);
-      if (enemyIndex >= 0) logs.push(`${enemyTeam[enemyIndex].name} enters.`);
+      pushBattleLog(`${enemy.name} is down.`);
+      activeBattle.enemyIndex = nextAliveIndex(activeBattle.enemyTeam, activeBattle.enemyIndex + 1);
+      renderArena();
+      if (activeBattle.enemyIndex >= 0) {
+        pushBattleLog(`${activeBattle.enemyTeam[activeBattle.enemyIndex].name} enters.`);
+        await playEntryAnimation('enemy');
+      }
       turns += 1;
       continue;
     }
 
     const enemyDamage = calculateDamage(enemy, player);
     player.hp = Math.max(0, player.hp - enemyDamage);
-    logs.push(`${enemy.name} hits ${player.name} for ${enemyDamage}.`);
+    pushBattleLog(`${enemy.name} hits ${player.name} for ${enemyDamage}.`);
+    await playAttackAnimation('enemy');
 
     if (player.hp <= 0) {
-      logs.push(`${player.name} is down.`);
-      playerIndex = nextAliveIndex(playerTeam, playerIndex + 1);
-      if (playerIndex >= 0) logs.push(`${playerTeam[playerIndex].name} enters.`);
+      pushBattleLog(`${player.name} is down.`);
+      activeBattle.playerIndex = nextAliveIndex(activeBattle.playerTeam, activeBattle.playerIndex + 1);
+      renderArena();
+      if (activeBattle.playerIndex >= 0) {
+        pushBattleLog(`${activeBattle.playerTeam[activeBattle.playerIndex].name} enters.`);
+        await playEntryAnimation('player');
+      }
     }
 
     turns += 1;
   }
 
-  const playerWon = enemyTeam.every((card) => card.hp <= 0);
-  const resultText = playerWon
+  activeBattle.playerWon = activeBattle.enemyTeam.every((card) => card.hp <= 0);
+  const resultText = activeBattle.playerWon
     ? (battleMode === 'boss' ? `Boss cleared. +${BOSS_REWARD} PP` : '5v5 battle won.')
     : (battleMode === 'boss' ? 'Boss battle lost.' : 'AI deck won.');
 
-  logs.push(resultText);
+  activeBattle.resultText = resultText;
+  pushBattleLog(resultText);
 
   return {
-    playerWon,
+    playerWon: activeBattle.playerWon,
     resultText,
-    playerTeam,
-    enemyTeam,
-    logs,
+    playerTeam: activeBattle.playerTeam,
+    enemyTeam: activeBattle.enemyTeam,
+    playerIndex: activeBattle.playerIndex,
+    enemyIndex: activeBattle.enemyIndex,
+    logs: [...activeBattle.logs],
   };
 }
 
-function startBattle() {
+async function startBattle() {
+  if (isBattling) return;
+
   const selectedTeam = getSelectedTeam();
 
   if (selectedTeam.length === 0) {
@@ -580,13 +747,24 @@ function startBattle() {
     return;
   }
 
+  const bossCooldown = getBossCooldown();
+  if (battleMode === 'boss' && bossCooldown.locked) {
+    battleStatusEl.textContent = `Boss cleared. Next fight in ${formatCooldown(bossCooldown.remainingMs)}.`;
+    return;
+  }
+
   const enemyTeam = battleMode === 'boss' ? [currentBoss] : currentAiDeck;
-  lastBattle = simulateBattle(selectedTeam, enemyTeam);
+  isBattling = true;
+  renderAll();
+  lastBattle = await runBattle(selectedTeam, enemyTeam);
 
   if (battleMode === 'boss' && lastBattle.playerWon) {
+    markBossDefeated();
     grantPP(BOSS_REWARD);
   }
 
+  activeBattle = null;
+  isBattling = false;
   renderAll();
 }
 
@@ -608,4 +786,12 @@ window.addEventListener('wecib:state-changed', () => {
 renderAll();
 window.setInterval(() => {
   balanceEl.textContent = formatPP(getBalance());
+  if (battleMode === 'boss' && !isBattling) {
+    if (refreshDailyBoss()) {
+      renderAll();
+    } else {
+      renderMode();
+      renderStatus();
+    }
+  }
 }, 1000);

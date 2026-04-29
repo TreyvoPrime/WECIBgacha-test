@@ -208,7 +208,7 @@ const CASES = enforceCaseRules([
     name: 'MHS Case',
     price: 12,
     image: 'Images/mhsCrate.png',
-    flavor: 'Youngings',
+    flavor: 'Youngings.',
     items: [
       { name: 'AB', rarity: 'freshman' },
       { name: 'Beatrice Kovalik', rarity: 'freshman' },
@@ -239,7 +239,7 @@ const CASES = enforceCaseRules([
     name: 'RT2 Case',
     price: 24,
     image: 'Images/rt2Crate.png',
-    flavor: 'The Main Attraction, RT2 events, folks, and gatherings',
+    flavor: 'The Main Attraction, RT2 events, folks, and gatherings.',
     items: [
       { name: 'Alex Frieders', rarity: 'freshman' },
       { name: 'Christian', rarity: 'freshman' },
@@ -296,7 +296,11 @@ const CASES = enforceCaseRules([
     name: 'Wake Tech Case',
     price: 250,
     image: 'Images/WakeTechCrate (1).png',
-    flavor: 'A case of Wake Tech... A secret card may be held',
+    flavor: 'A case of Wake Tech... A secret card may be held.',
+    rarityWeights: {
+      freshman: 99,
+      graduated: 1,
+    },
     items: [
       { name: 'AB', rarity: 'freshman' },
       { name: 'Alex Frieders', rarity: 'freshman' },
@@ -449,6 +453,7 @@ function renderWonItemMarkup(card) {
 
 function getWeightedPool(caseData) {
   const rarityCounts = {};
+  const rarityWeights = caseData.rarityWeights || RARITIES;
 
   caseData.items.forEach((item) => {
     const rarityKey = normalizeRarity(item.rarity);
@@ -457,9 +462,10 @@ function getWeightedPool(caseData) {
 
   return caseData.items.map((item) => {
     const rarityKey = normalizeRarity(item.rarity);
+    const rarityWeight = rarityWeights[rarityKey]?.weight ?? rarityWeights[rarityKey] ?? RARITIES[rarityKey].weight;
     return {
       item: enrichCard(item),
-      weight: RARITIES[rarityKey].weight / rarityCounts[rarityKey],
+      weight: rarityWeight / rarityCounts[rarityKey],
     };
   });
 }
