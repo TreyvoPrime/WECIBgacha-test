@@ -158,7 +158,6 @@ const modeButtons = [...document.querySelectorAll('.battle-mode-btn')];
 const autoTeamBtn = document.getElementById('autoTeamBtn');
 const clearTeamBtn = document.getElementById('clearTeamBtn');
 const startBattleBtn = document.getElementById('startBattleBtn');
-const rerollOpponentBtn = document.getElementById('rerollOpponentBtn');
 const battleSearchInput = document.getElementById('battleSearchInput');
 const battleRarityFilter = document.getElementById('battleRarityFilter');
 const teamSlotsEl = document.getElementById('teamSlots');
@@ -415,8 +414,6 @@ function renderMode() {
     ? 'Battling'
     : (battleMode === 'boss' ? 'Start Boss Battle' : 'Start 5v5 Battle');
   enemyBenchLabelEl.textContent = battleMode === 'boss' ? 'Boss' : 'AI Deck';
-  rerollOpponentBtn.textContent = battleMode === 'boss' ? 'Daily Boss' : 'New Opponent';
-  rerollOpponentBtn.disabled = isBattling || battleMode === 'boss';
   startBattleBtn.disabled = isBattling || (battleMode === 'boss' && bossCooldown.locked);
   autoTeamBtn.disabled = isBattling;
   clearTeamBtn.disabled = isBattling;
@@ -580,18 +577,6 @@ function clearTeam() {
 
 function switchMode(nextMode) {
   battleMode = nextMode;
-  lastBattle = null;
-  if (battleMode === 'boss') {
-    currentBoss = createBossCard();
-  } else {
-    currentAiDeck = createAiDeck();
-  }
-  renderAll();
-}
-
-function rerollOpponent() {
-  if (isBattling) return;
-
   lastBattle = null;
   if (battleMode === 'boss') {
     currentBoss = createBossCard();
@@ -791,7 +776,6 @@ modeButtons.forEach((button) => {
 autoTeamBtn.addEventListener('click', autoFillTeam);
 clearTeamBtn.addEventListener('click', clearTeam);
 startBattleBtn.addEventListener('click', startBattle);
-rerollOpponentBtn.addEventListener('click', rerollOpponent);
 battleSearchInput.addEventListener('input', renderAvailableCards);
 battleRarityFilter.addEventListener('change', renderAvailableCards);
 
