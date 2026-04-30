@@ -534,7 +534,7 @@ function renderStatus() {
 
   battleStatusEl.textContent = battleMode === 'boss'
     ? `${currentBoss.name} is today's boss.`
-    : 'The AI deck is ready.';
+    : 'The opponent deck is ready.';
 }
 
 function renderAll() {
